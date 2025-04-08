@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>간단한 레이싱 게임</title>
+  <title>레이싱 게임</title>
   <style>
     body, html {
       margin: 0;
@@ -27,29 +27,67 @@
     
     .car {
       position: absolute;
-      width: 50px;
-      height: 30px;
-      border-radius: 8px;
+      width: 40px;
+      height: 25px;
+      border-radius: 8px 5px 5px 5px;
       text-align: center;
-      line-height: 30px;
+      line-height: 25px;
       font-weight: bold;
       color: white;
       will-change: transform, left, top;
       box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-      transition: none; /* 애니메이션을 requestAnimationFrame으로 제어할 것이므로 transition 제거 */
+      z-index: 10;
+    }
+    
+    .car::before {
+      content: '';
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      background: white;
+      border-radius: 50%;
+      top: 5px;
+      left: 5px;
+      box-shadow: 0 0 2px white;
+    }
+    
+    .car::after {
+      content: '';
+      position: absolute;
+      width: 4px;
+      height: 2px;
+      background: red;
+      border-radius: 1px;
+      bottom: 3px;
+      right: 5px;
+      box-shadow: -8px 0 0 red;
     }
     
     .track {
       position: absolute;
-      width: 600px;
-      height: 400px;
+      width: 650px;
+      height: 350px;
       border: 15px solid #333;
-      border-radius: 50px;
+      border-radius: 170px;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
       box-sizing: border-box;
       box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+    
+    /* 트랙 표면 */
+    .track::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #444;
+      border-radius: 170px;
+      z-index: 1;
     }
     
     .finish-line {
@@ -63,7 +101,7 @@
         #fff 5px,
         #fff 10px
       );
-      bottom: 20%;
+      bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
       border-radius: 2px;
@@ -71,39 +109,47 @@
       box-shadow: 0 0 5px rgba(0,0,0,0.5);
     }
     
-    /* 결승선 깃발 */
-    .finish-line::before, .finish-line::after {
-      content: '';
+    /* 트랙 안쪽 영역 */
+    .track-inner {
       position: absolute;
-      width: 15px;
-      height: 15px;
-      background: #fff;
-      border: 2px solid #000;
-      border-radius: 50%;
-      top: -15px;
-      z-index: 6;
-      box-shadow: 0 2px 3px rgba(0,0,0,0.3);
+      width: 70%;
+      height: 60%;
+      background: #5da45d;
+      border-radius: 140px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 2;
+      box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.2);
     }
     
-    .finish-line::before {
-      left: -5px;
-    }
-    
-    .finish-line::after {
-      right: -5px;
-    }
-    
-    /* 트랙 장식 */
-    .track::after {
-      content: '';
+    /* 트랙 차선 */
+    .lane-markings {
       position: absolute;
-      width: 92%;
-      height: 86%;
-      top: 7%;
-      left: 4%;
-      border-radius: 45px;
-      border: 2px dashed rgba(255, 255, 255, 0.3);
-      pointer-events: none;
+      width: 100%;
+      height: 100%;
+      top: 0;
+      left: 0;
+      z-index: 3;
+      border-radius: 170px;
+      overflow: hidden;
+    }
+    
+    .lane-marking {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.5);
+      width: 20px;
+      height: 3px;
+    }
+    
+    /* 트랙 코너 표시 */
+    .corner-marker {
+      position: absolute;
+      width: 12px;
+      height: 40px;
+      background: #ff0000;
+      z-index: 3;
+      transform-origin: center;
     }
     
     .controls {
@@ -158,12 +204,20 @@
       transform: translateX(-50%);
       border-radius: 5px;
       width: 80%;
+      z-index: 20;
+    }
+    
+    @keyframes flagWave {
+      0% { transform: rotate(-5deg); }
+      100% { transform: rotate(5deg); }
     }
   </style>
 </head>
 <body>
   <div id="game-container">
     <div class="track">
+      <div class="track-inner"></div>
+      <div class="lane-markings" id="lane-markings"></div>
       <div class="finish-line"></div>
     </div>
     <div class="race-info" id="race-info"></div>
@@ -181,6 +235,7 @@
     // 게임 요소
     const gameContainer = document.getElementById('game-container');
     const track = document.querySelector('.track');
+    const laneMarkings = document.getElementById('lane-markings');
     const startButton = document.getElementById('start-button');
     const playerCountInput = document.getElementById('player-count');
     const resultDiv = document.getElementById('result');
@@ -191,6 +246,8 @@
     let gameStarted = false;
     let gameFinished = false;
     let finishedCars = [];
+    let lastTimestamp = 0;
+    let gameTime = 0;
     
     // 차량 색상
     const carColors = [
@@ -203,87 +260,6 @@
       "#FFA500", // 주황
       "#800080"  // 보라
     ];
-    
-    // 결승선 효과
-    function addFinishLineEffects() {
-      // 결승선 위치 강조를 위한 마커 추가
-      const finishMarker = document.createElement('div');
-      finishMarker.style.position = 'absolute';
-      finishMarker.style.width = '100px';
-      finishMarker.style.height = '30px';
-      finishMarker.style.bottom = 'calc(20% + 20px)';
-      finishMarker.style.left = '50%';
-      finishMarker.style.transform = 'translateX(-50%)';
-      finishMarker.style.textAlign = 'center';
-      finishMarker.style.fontWeight = 'bold';
-      finishMarker.style.color = '#fff';
-      finishMarker.style.textShadow = '0 0 5px #000';
-      finishMarker.style.zIndex = '4';
-      finishMarker.textContent = '결승선';
-      gameContainer.appendChild(finishMarker);
-      
-      // 결승선 깃발 추가
-      const flag = document.createElement('div');
-      flag.style.position = 'absolute';
-      flag.style.width = '15px';
-      flag.style.height = '60px';
-      flag.style.bottom = 'calc(20% + 50px)';
-      flag.style.left = 'calc(50% + 40px)';
-      flag.style.background = 'linear-gradient(to bottom, #333 0%, #333 10%, #fff 10%, #fff 20%, #333 20%, #333 30%, #fff 30%, #fff 40%, #333 40%, #333 50%, #fff 50%, #fff 60%, #333 60%, #333 70%, #fff 70%, #fff 80%, #333 80%, #333 90%, #fff 90%, #fff 100%)';
-      flag.style.borderRadius = '2px';
-      flag.style.zIndex = '4';
-      flag.style.transformOrigin = 'bottom center';
-      flag.style.animation = 'flagWave 1s infinite alternate';
-      gameContainer.appendChild(flag);
-      
-      // 깃발 애니메이션 추가
-      const style = document.createElement('style');
-      style.textContent = `
-        @keyframes flagWave {
-          0% { transform: rotate(-5deg); }
-          100% { transform: rotate(5deg); }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-    
-    // 게임 시작
-    startButton.addEventListener('click', startGame);
-    
-    // 애니메이션 루프를 시작하고 게임이 로드되면 실행
-    requestAnimationFrame(updateGame);
-    
-    function startGame() {
-      if (gameStarted) return;
-      
-      // 게임 상태 초기화
-      clearCars();
-      gameStarted = true;
-      gameFinished = false;
-      finishedCars = [];
-      resultDiv.textContent = '';
-      raceInfoDiv.textContent = '레이스 시작!';
-      
-      // 결승선 효과 추가
-      addFinishLineEffects();
-      
-      // 차량 생성
-      const playerCount = parseInt(playerCountInput.value) || 4;
-      createCars(Math.min(Math.max(playerCount, 2), 8));
-      
-      // 타임스탬프 초기화
-      lastTimestamp = performance.now();
-    }
-    
-    function clearCars() {
-      // 기존 차량 제거
-      cars.forEach(car => {
-        if (car.element && car.element.parentNode) {
-          car.element.parentNode.removeChild(car.element);
-        }
-      });
-      cars = [];
-    }
     
     // 색상이 밝은지 어두운지 판단하는 함수
     function isLightColor(color) {
@@ -300,305 +276,452 @@
       return brightness > 128;
     }
     
-    function createCars(count) {
-      // 경로 가져오기
-      const path = getPath();
+    // 게임 초기화 및 시작
+    startButton.addEventListener('click', startGame);
+    
+    // 애니메이션 프레임 요청
+    requestAnimationFrame(updateGame);
+    
+    // 레인 마킹 생성
+    function createLaneMarkings() {
+      // 기존 마킹 제거
+      while (laneMarkings.firstChild) {
+        laneMarkings.removeChild(laneMarkings.firstChild);
+      }
       
-      // 결승선 위치를 시작점으로 (하단 중앙)
-      const startPoint = path[0];
+      const trackRect = track.getBoundingClientRect();
+      const centerX = trackRect.width / 2;
+      const centerY = trackRect.height / 2;
       
-      for (let i = 0; i < count; i++) {
-        // 차량 색상
-        const carColor = carColors[i % carColors.length];
-        const isLight = isLightColor(carColor);
+      // 레인 마킹 추가 (점선)
+      const markingCount = 40;
+      for (let i = 0; i < markingCount; i++) {
+        const angle = (Math.PI * 2 * i) / markingCount;
+        const x = centerX + Math.cos(angle) * (trackRect.width * 0.4);
+        const y = centerY + Math.sin(angle) * (trackRect.height * 0.4);
         
-        // 차량 요소 생성
-        const carElement = document.createElement('div');
-        carElement.className = 'car';
-        carElement.textContent = (i + 1);
-        carElement.style.backgroundColor = carColor;
+        const marking = document.createElement('div');
+        marking.className = 'lane-marking';
+        marking.style.left = `${x}px`;
+        marking.style.top = `${y}px`;
+        marking.style.transform = `translate(-50%, -50%) rotate(${angle + Math.PI/2}rad)`;
         
-        // 밝은 색상일 경우 텍스트 색상을 검정으로 변경
-        if (isLight) {
-          carElement.style.color = 'black';
-        }
-        
-        // 차량 모양 개선
-        carElement.style.borderRadius = '10px 5px 5px 5px'; // 전면부 더 둥글게
-        
-        gameContainer.appendChild(carElement);
-        
-        // 시작 위치 계산 (각 차량을 위아래로 정렬)
-        // 홀수 차량은 위쪽, 짝수 차량은 아래쪽으로 배치
-        const rowCount = Math.ceil(count / 2);
-        const row = Math.floor(i / 2);
-        const isLeft = i % 2 === 0; 
-        const horizontalOffset = isLeft ? -30 : 30; // 왼쪽/오른쪽 오프셋
-        const verticalOffset = 15 * (row - (rowCount-1)/2); // 중앙에서부터 세로 간격 계산
-        
-        // 차량 데이터
-        const car = {
-          element: carElement,
-          number: i + 1,
-          x: startPoint.x + horizontalOffset, // 결승선 기준 좌우 배치
-          y: startPoint.y + verticalOffset, // 세로 간격 배치
-          speed: 0,
-          maxSpeed: 0.5 + Math.random() * 1.0, // 속도 범위 조정 (좀 더 부드럽게)
-          acceleration: 0.005 + Math.random() * 0.01, // 가속도 범위 조정 (좀 더 부드럽게)
-          finished: false,
-          lap: 0,
-          pathIndex: 0,
-          pathProgress: 0,
-          color: carColor,
-          lastTimestamp: 0, // 마지막 업데이트 시간 추적용
-          position: {x: 0, y: 0}, // 보간을 위한 이전 위치 저장
-          targetPosition: {x: 0, y: 0} // 보간을 위한 목표 위치 저장
-        };
-        
-        // 시작 위치에 배치
-        car.position.x = car.x;
-        car.position.y = car.y;
-        car.targetPosition.x = car.x;
-        car.targetPosition.y = car.y;
-        
-        updateCarPosition(car);
-        cars.push(car);
+        laneMarkings.appendChild(marking);
       }
     }
     
-    // 트랙 경로 캐싱을 위한 변수
-    let cachedPath = null;
-    let lastWidth = 0;
-    let lastHeight = 0;
-    
-    // 경로 정의 (트랙을 따라 이동할 경로)
-    function getPath() {
+    // 경로 생성
+    function createPaths() {
       const trackRect = track.getBoundingClientRect();
       const gameRect = gameContainer.getBoundingClientRect();
       
-      // 화면 크기가 변하지 않았으면 캐시된 경로 사용
-      if (cachedPath && trackRect.width === lastWidth && trackRect.height === lastHeight) {
-        return cachedPath;
-      }
-      
-      // 트랙 상대 위치
+      // 트랙 위치
       const trackLeft = trackRect.left - gameRect.left;
       const trackTop = trackRect.top - gameRect.top;
       const trackWidth = trackRect.width;
       const trackHeight = trackRect.height;
       
-      // 경로의 중심선
-      const innerPadding = 40; // 트랙 안쪽 여백
-      
-      // 타원형 트랙 경로를 여러 포인트로 나타내기
-      const points = [];
-      const segments = 60; // 더 부드러운 곡선을 위해 세그먼트 수 증가
-      
-      // 트랙 중앙 좌표
+      // 중앙 좌표
       const centerX = trackLeft + trackWidth / 2;
       const centerY = trackTop + trackHeight / 2;
-      const radiusX = (trackWidth / 2) - innerPadding;
-      const radiusY = (trackHeight / 2) - innerPadding;
       
-      // 결승선 위치를 기준으로 시작점 조정 (하단 중앙)
-      const startAngle = Math.PI / 2; // 아래에서 시작
+      // 레인 수 및 간격
+      const laneCount = 3;
+      const paths = [];
       
-      // 타원 경로 계산 - 결승선 위치에서 시작하여 시계 방향으로 이동
-      for (let i = 0; i <= segments; i++) {
-        const angle = startAngle + (Math.PI * 2 * i) / segments;
-        const x = centerX + Math.cos(angle) * radiusX;
-        const y = centerY + Math.sin(angle) * radiusY;
-        points.push({ x, y });
+      // 각 레인 경로 생성
+      for (let lane = 0; lane < laneCount; lane++) {
+        const lanePoints = [];
+        const segments = 60; // 세그먼트 수
+        
+        // 레인별 반경 설정 - 안쪽부터 바깥쪽으로
+        const radiusOffset = 25 + lane * 30; // 각 레인의 반경 차이
+        const radiusX = trackWidth / 2 - radiusOffset;
+        const radiusY = trackHeight / 2 - radiusOffset;
+        
+        // 시작점은 하단 중앙
+        const startAngle = Math.PI / 2;
+        
+        // 각 포인트 생성
+        for (let i = 0; i <= segments; i++) {
+          const angle = startAngle + (Math.PI * 2 * i) / segments;
+          const x = centerX + Math.cos(angle) * radiusX;
+          const y = centerY + Math.sin(angle) * radiusY;
+          lanePoints.push({ x, y, lane });
+        }
+        
+        paths.push(lanePoints);
       }
       
-      // 크기 캐싱
-      lastWidth = trackRect.width;
-      lastHeight = trackRect.height;
-      cachedPath = points;
-      
-      return points;
+      return paths;
     }
     
-    function updateCarPosition(car) {
-      car.element.style.left = car.x + 'px';
-      car.element.style.top = car.y + 'px';
+    // 차량 생성
+    function createCars(count) {
+      // 차량 초기화
+      cars = [];
       
-      // 차량 방향에 따라 회전
-      const path = getPath();
-      const currentPoint = path[car.pathIndex];
-      const nextIndex = (car.pathIndex + 1) % path.length;
-      const nextPoint = path[nextIndex];
+      // 경로 생성
+      const paths = createPaths();
+      createLaneMarkings();
       
-      // 진행 방향에 맞게 각도 계산
-      const angle = Math.atan2(nextPoint.y - currentPoint.y, nextPoint.x - currentPoint.x);
+      console.log(`${paths.length}개 레인으로 ${count}대 차량 생성 중...`);
       
-      // 약간의 틸트 효과 추가 (차량이 코너링 중일 때)
-      const tilt = (nextIndex > 5 && nextIndex < 20) || (nextIndex > 25) ? 0.1 : 0;
-      
-      // 차량 모양 개선
-      car.element.style.transform = `rotate(${angle}rad) skewX(${tilt}rad)`;
-      
-      // 차량 디자인 개선
-      if (!car.designApplied) {
-        // 번호에 그림자 효과
-        car.element.style.textShadow = isLightColor(car.color) ? '1px 1px 1px rgba(0,0,0,0.5)' : '1px 1px 1px rgba(255,255,255,0.5)';
+      for (let i = 0; i < count; i++) {
+        // 차량별 레인 할당
+        const lane = i % paths.length;
+        const lanePoints = paths[lane];
         
-        // 앞쪽 조명 효과
-        const lightElement = document.createElement('div');
-        lightElement.style.position = 'absolute';
-        lightElement.style.width = '5px';
-        lightElement.style.height = '5px';
-        lightElement.style.background = '#fff';
-        lightElement.style.borderRadius = '50%';
-        lightElement.style.boxShadow = '0 0 5px white';
-        lightElement.style.top = '5px';
-        lightElement.style.left = '5px';
-        car.element.appendChild(lightElement);
+        // 시작점
+        const startPoint = lanePoints[0];
         
-        // 뒤쪽 테일라이트 효과 (좌우 2개)
-        const tailLight1 = document.createElement('div');
-        tailLight1.style.position = 'absolute';
-        tailLight1.style.width = '4px';
-        tailLight1.style.height = '2px';
-        tailLight1.style.background = 'red';
-        tailLight1.style.borderRadius = '1px';
-        tailLight1.style.bottom = '3px';
-        tailLight1.style.right = '5px';
-        car.element.appendChild(tailLight1);
+        // 시작 위치 계산
+        const offset = 10 * (i - Math.floor(count / 2)); // 좌우 간격
         
-        const tailLight2 = tailLight1.cloneNode();
-        tailLight2.style.right = '12px';
-        car.element.appendChild(tailLight2);
+        // 차량 요소 생성
+        const carElement = document.createElement('div');
+        carElement.className = 'car';
+        carElement.textContent = (i + 1);
         
-        car.designApplied = true;
+        // 차량 색상
+        const carColor = carColors[i % carColors.length];
+        carElement.style.backgroundColor = carColor;
+        
+        // 밝은 색상일 경우 텍스트 색상을 검정으로 변경
+        if (isLightColor(carColor)) {
+          carElement.style.color = 'black';
+        }
+        
+        gameContainer.appendChild(carElement);
+        
+        // 차량 타입 결정 (0: 밸런스, 1: 가속, 2: 속도, 3: 코너링)
+        const carType = Math.floor(Math.random() * 4);
+        let maxSpeed, acceleration, corneringBonus;
+        
+        switch (carType) {
+          case 0: // 밸런스형
+            maxSpeed = 0.5 + Math.random() * 0.2;
+            acceleration = 0.005 + Math.random() * 0.003;
+            corneringBonus = 1.0;
+            break;
+          case 1: // 가속 특화
+            maxSpeed = 0.45 + Math.random() * 0.15;
+            acceleration = 0.008 + Math.random() * 0.004;
+            corneringBonus = 0.8;
+            break;
+          case 2: // 속도 특화
+            maxSpeed = 0.6 + Math.random() * 0.25;
+            acceleration = 0.003 + Math.random() * 0.002;
+            corneringBonus = 0.7;
+            break;
+          case 3: // 코너링 특화
+            maxSpeed = 0.48 + Math.random() * 0.17;
+            acceleration = 0.004 + Math.random() * 0.003;
+            corneringBonus = 1.5;
+            break;
+        }
+        
+        // 차량 데이터
+        const car = {
+          element: carElement,
+          number: i + 1,
+          lane: lane,
+          targetLane: lane,
+          isChangingLane: false,
+          laneChangeProgress: 0,
+          lastLaneChangeTime: 0,
+          
+          x: startPoint.x + offset,
+          y: startPoint.y,
+          
+          speed: 0,
+          maxSpeed: maxSpeed,
+          baseMaxSpeed: maxSpeed,
+          acceleration: acceleration,
+          corneringBonus: corneringBonus,
+          
+          type: carType,
+          
+          finished: false,
+          lap: 0,
+          pathIndex: 0,
+          position: i,
+          pathProgress: 0,
+          
+          color: carColor,
+          
+          position: { x: 0, y: 0 },
+          targetPosition: { x: 0, y: 0 },
+          
+          // AI 데이터
+          preferredLine: Math.random(),
+          aggressiveness: 0.3 + Math.random() * 0.7,
+          mistakes: 0,
+          overtakes: 0,
+          totalDistance: 0
+        };
+        
+        // 시작 위치 설정
+        car.position.x = car.x;
+        car.position.y = car.y;
+        car.targetPosition.x = car.x;
+        car.targetPosition.y = car.y;
+        
+        car.element.style.left = `${car.x}px`;
+        car.element.style.top = `${car.y}px`;
+        
+        cars.push(car);
+      }
+      
+      console.log(`${cars.length}대 차량 생성 완료`);
+    }
+    
+    // 차량 제거
+    function clearCars() {
+      cars.forEach(car => {
+        if (car.element && car.element.parentNode) {
+          car.element.parentNode.removeChild(car.element);
+        }
+      });
+      cars = [];
+      finishedCars = [];
+    }
+    
+    // 순위 계산
+    function checkForOvertaking(cars) {
+      const racingOrder = [...cars].sort((a, b) => {
+        if (a.lap !== b.lap) return b.lap - a.lap;
+        if (a.pathIndex !== b.pathIndex) return b.pathIndex - a.pathIndex;
+        return b.pathProgress - a.pathProgress;
+      });
+      
+      racingOrder.forEach((car, index) => {
+        if (car.position !== index && !car.finished) {
+          if (car.position > index && car.position !== 0) {
+            car.overtakes++;
+          }
+        }
+        car.position = index;
+      });
+      
+      return racingOrder;
+    }
+    
+    // 차선 변경 결정
+    function decideLaneChange(car, paths, racingOrder, timestamp) {
+      if (car.finished || car.isChangingLane) return;
+      
+      const laneChangeCooldown = 3000; // 3초
+      if (timestamp - car.lastLaneChangeTime < laneChangeCooldown) return;
+      
+      const carPosition = car.position;
+      const carsAhead = racingOrder.filter(c => 
+        c.position < carPosition && 
+        c.position >= carPosition - 2 && 
+        !c.finished && 
+        c.lane === car.lane &&
+        Math.abs(c.pathIndex - car.pathIndex) < 20
+      );
+      
+      if (carsAhead.length > 0 && Math.random() < car.aggressiveness * 0.3) {
+        const possibleLanes = [];
+        
+        if (car.lane > 0) possibleLanes.push(car.lane - 1);
+        if (car.lane < paths.length - 1) possibleLanes.push(car.lane + 1);
+        
+        if (possibleLanes.length > 0) {
+          const newLane = possibleLanes[Math.floor(Math.random() * possibleLanes.length)];
+          car.targetLane = newLane;
+          car.isChangingLane = true;
+          car.laneChangeProgress = 0;
+          car.lastLaneChangeTime = timestamp;
+        }
       }
     }
     
-    // 부드러운 애니메이션을 위한 타임스탬프
-    let lastTimestamp = 0;
-    
+    // 게임 렌더링 업데이트
     function updateGame(timestamp) {
-      if (!gameStarted || gameFinished) {
+      if (!gameStarted) {
         requestAnimationFrame(updateGame);
         return;
       }
       
-      // 시간 차이 계산 (초 단위로 변환)
+      // 시간 계산
+      if (lastTimestamp === 0) lastTimestamp = timestamp;
       const deltaTime = (timestamp - lastTimestamp) / 1000;
       lastTimestamp = timestamp;
+      gameTime += deltaTime;
       
-      // 너무 큰 deltaTime 값을 방지 (페이지가 백그라운드에 있었을 경우 등)
+      // 클램핑
       const clampedDelta = Math.min(deltaTime, 0.1);
       
+      // 활성 차량 수
       let activeCars = 0;
-      const path = getPath(); // 현재 경로 가져오기
       
+      // 패스 생성
+      const paths = createPaths();
+      
+      // 차량 업데이트
       cars.forEach(car => {
         if (car.finished) return;
-        
         activeCars++;
         
-        // 가속 (차량마다 다른 가속도와 최고 속도, 시간 기반으로 계산)
-        car.speed = Math.min(car.speed + car.acceleration * clampedDelta * 60, car.maxSpeed);
+        // 코너링 감지
+        const segments = paths[0].length;
+        const quarterTrack = segments / 4;
+        const isInCorner = (
+          (car.pathIndex > quarterTrack * 0.7 && car.pathIndex < quarterTrack * 1.3) ||
+          (car.pathIndex > quarterTrack * 1.7 && car.pathIndex < quarterTrack * 2.3) ||
+          (car.pathIndex > quarterTrack * 2.7 && car.pathIndex < quarterTrack * 3.3) ||
+          (car.pathIndex > quarterTrack * 3.7 || car.pathIndex < quarterTrack * 0.3)
+        );
         
-        // 경로 계산
-        const currentPoint = path[car.pathIndex];
-        const nextIndex = (car.pathIndex + 1) % path.length;
-        const nextPoint = path[nextIndex];
+        // 코너에서 감속
+        if (isInCorner) {
+          car.maxSpeed = car.baseMaxSpeed * (0.7 + (car.corneringBonus * 0.2));
+          
+          // 코너링 실수 확률
+          const mistakeChance = 0.001 * (1 - car.corneringBonus);
+          if (Math.random() < mistakeChance && car.speed > car.maxSpeed * 0.8) {
+            car.speed *= 0.7;
+            car.mistakes++;
+          }
+        } else {
+          car.maxSpeed = car.baseMaxSpeed;
+        }
         
+        // 가속
+        car.speed = Math.min(
+          car.speed + car.acceleration * clampedDelta * 60,
+          car.maxSpeed
+        );
+        
+        // 현재 레인과 타겟 레인
+        const currentLane = Math.min(car.lane, paths.length - 1);
+        const targetLane = car.isChangingLane ? 
+          Math.min(car.targetLane, paths.length - 1) : 
+          currentLane;
+        
+        const lanePoints = paths[currentLane];
+        const targetLanePoints = paths[targetLane];
+        
+        // 인덱스 계산
+        const pointIndex = Math.floor(car.pathIndex) % lanePoints.length;
+        const nextIndex = (pointIndex + 1) % lanePoints.length;
+        
+        const currentPoint = lanePoints[pointIndex];
+        const nextPoint = lanePoints[nextIndex];
+        
+        // 세그먼트 길이 계산
         const dx = nextPoint.x - currentPoint.x;
         const dy = nextPoint.y - currentPoint.y;
         const segmentLength = Math.sqrt(dx * dx + dy * dy);
         
-        // 시간 기반 진행률 업데이트
+        // 진행률 업데이트
         car.pathProgress += car.speed * clampedDelta * 60;
+        car.totalDistance += car.speed * clampedDelta;
         
+        // 세그먼트 전환
         if (car.pathProgress >= segmentLength) {
           car.pathProgress -= segmentLength;
-          car.pathIndex = nextIndex;
+          car.pathIndex = (car.pathIndex + 1) % lanePoints.length;
           
-          // 랩 완료 체크 (시작점을 지나가면)
-          if (nextIndex === 0) {
+          // 랩 완료 체크
+          if (car.pathIndex === 0) {
             car.lap++;
             
-            // 레이스 정보 업데이트 (랩을 완료할 때마다)
-            raceInfoDiv.textContent = `레이스 진행 중... ${car.number}번 차량 ${car.lap}바퀴 완료!`;
+            raceInfoDiv.textContent = `${car.number}번 차량 ${car.lap}바퀴 완료!`;
             
-            // 게임 종료 조건 (1바퀴 완료 - 필요에 따라 바퀴 수 조정 가능)
-            if (car.lap >= 1) {
+            // 2바퀴 완료시 종료
+            if (car.lap >= 2) {
               car.finished = true;
-              
-              // 마무리 애니메이션 - 완주한 차량 효과
               car.element.style.boxShadow = '0 0 15px gold';
-              car.element.style.zIndex = '10';
               
               finishedCars.push(car);
-              
-              // 업데이트 레이스 정보
               updateRaceInfo();
               
-              // 모든 차량 완주 시 게임 종료
               if (finishedCars.length === cars.length) {
                 endGame();
               } else if (finishedCars.length === 1) {
-                // 첫 번째 차량 완주 시 특별 메시지
-                raceInfoDiv.textContent = `${car.number}번 차량이 우승했습니다! 나머지 차량 완주 대기 중...`;
+                raceInfoDiv.textContent = `${car.number}번 차량이 우승했습니다!`;
               }
             }
           }
         }
         
-        // 경로 따라 이동 - 이전 위치를 저장
-        car.position.x = car.x;
-        car.position.y = car.y;
-        
-        // 새 위치 계산
-        const t = car.pathProgress / segmentLength;
-        car.targetPosition.x = currentPoint.x + dx * t;
-        car.targetPosition.y = currentPoint.y + dy * t;
-        
-        // 위치 부드럽게 보간 (LERP - Linear Interpolation)
-        const lerpFactor = 0.6; // 낮을수록 더 부드럽지만 느리게 반응
-        car.x = car.position.x + (car.targetPosition.x - car.position.x) * lerpFactor;
-        car.y = car.position.y + (car.targetPosition.y - car.position.y) * lerpFactor;
-        
-        // 진행 방향 계산
-        const direction = {
-          x: car.targetPosition.x - car.position.x,
-          y: car.targetPosition.y - car.position.y
-        };
-        
-        // 방향 각도 계산
-        const angle = Math.atan2(direction.y, direction.x);
-        
-        // 약간의 진동 효과 (차량 속도에 따라)
-        const wobble = Math.sin(timestamp / 100 + car.number) * (car.speed / 5);
-        
-        // 코너링 효과 - 코스 위치에 따라 틸트 조정
-        let tilt = 0;
-        if (car.pathIndex > path.length * 0.15 && car.pathIndex < path.length * 0.35) {
-          // 우측 상단 코너
-          tilt = -0.1;
-        } else if (car.pathIndex > path.length * 0.4 && car.pathIndex < path.length * 0.6) {
-          // 좌측 상단 코너  
-          tilt = 0.1;
-        } else if (car.pathIndex > path.length * 0.65 && car.pathIndex < path.length * 0.85) {
-          // 좌측 하단 코너
-          tilt = -0.1;
+        // 차선 변경 처리
+        if (car.isChangingLane) {
+          car.laneChangeProgress += clampedDelta * 2;
+          
+          if (car.laneChangeProgress >= 1) {
+            car.lane = car.targetLane;
+            car.isChangingLane = false;
+          }
         }
         
-        // 변환 적용 (회전 + 코너링 틸트 + 울렁거림)
-        car.element.style.transform = `rotate(${angle}rad) skewX(${tilt}rad) translateY(${wobble}px)`;
+        // 위치 계산 
+        const t = car.pathProgress / segmentLength;
         
-        // 위치 업데이트 - requestAnimationFrame 사용으로 더 부드러운 렌더링
+        // 차선 변경 중이면 보간
+        if (car.isChangingLane) {
+          const targetPoint = targetLanePoints[pointIndex];
+          const targetNextPoint = targetLanePoints[nextIndex];
+          
+          const currentX = currentPoint.x + dx * t;
+          const currentY = currentPoint.y + dy * t;
+          
+          const targetDx = targetNextPoint.x - targetPoint.x;
+          const targetDy = targetNextPoint.y - targetPoint.y;
+          const targetX = targetPoint.x + targetDx * t;
+          const targetY = targetPoint.y + targetDy * t;
+          
+          const lerpAmount = Math.sin(car.laneChangeProgress * Math.PI / 2);
+          car.x = currentX + (targetX - currentX) * lerpAmount;
+          car.y = currentY + (targetY - currentY) * lerpAmount;
+        } else {
+          car.x = currentPoint.x + dx * t;
+          car.y = currentPoint.y + dy * t;
+        }
+        
+        // 각도 계산
+        const angle = Math.atan2(dy, dx);
+        
+        // 진동 효과
+        const wobble = Math.sin(timestamp / 100 + car.number) * (car.speed / 5);
+        
+        // 코너링 틸트
+        let tilt = 0;
+        if (isInCorner) {
+          if (car.pathIndex < quarterTrack * 1.5) {
+            tilt = -0.15;
+          } else if (car.pathIndex < quarterTrack * 3) {
+            tilt = 0.15;
+          } else {
+            tilt = -0.15;
+          }
+        }
+        
+        // 변환 적용
+        car.element.style.transform = `rotate(${angle + Math.PI/2}rad) skewX(${tilt}rad) translateY(${wobble}px)`;
         car.element.style.left = `${car.x}px`;
         car.element.style.top = `${car.y}px`;
       });
       
-      // 항상 애니메이션 프레임 요청 (게임이 진행 중이지 않아도)
+      // 순위 계산
+      const racingOrder = checkForOvertaking(cars);
+      
+      // 차선 변경 결정 (0.5초마다)
+      if (Math.floor(gameTime * 2) !== Math.floor((gameTime - deltaTime) * 2)) {
+        cars.forEach(car => {
+          decideLaneChange(car, paths, racingOrder, timestamp);
+        });
+      }
+      
+      // 다음 프레임
       requestAnimationFrame(updateGame);
     }
     
+    // 순위 표시 업데이트
     function updateRaceInfo() {
       if (finishedCars.length > 0) {
         let info = '순위: ';
@@ -609,14 +732,13 @@
       }
     }
     
+    // 게임 종료
     function endGame() {
       gameStarted = false;
       gameFinished = true;
       
-      // 모든 결과 보여주기
       updateRaceInfo();
       
-      // 마지막 차량이 꼴찌
       const lastCar = finishedCars[finishedCars.length - 1];
       const firstCar = finishedCars[0];
       
@@ -625,31 +747,49 @@
         <span style="font-size: 0.8em; color: #666;">마지막 도착: ${lastCar.number}번 차량</span>
       `;
       
-      // 완주한 모든 차량에 효과 적용
       finishedCars.forEach((car, index) => {
-        // 등수에 따른 효과
         if (index === 0) {
-          // 1등 - 반짝이는 효과
           car.element.style.boxShadow = '0 0 20px gold';
           car.element.style.animation = 'pulse 1s infinite';
           
-          // CSS 애니메이션 추가
-          const style = document.createElement('style');
-          style.textContent = `
-            @keyframes pulse {
-              0% { box-shadow: 0 0 20px gold; }
-              50% { box-shadow: 0 0 30px gold, 0 0 40px rgba(255, 215, 0, 0.5); }
-              100% { box-shadow: 0 0 20px gold; }
-            }
-          `;
-          document.head.appendChild(style);
+          if (!document.querySelector('#winner-pulse')) {
+            const style = document.createElement('style');
+            style.id = 'winner-pulse';
+            style.textContent = `
+              @keyframes pulse {
+                0% { box-shadow: 0 0 20px gold; }
+                50% { box-shadow: 0 0 30px gold, 0 0 40px rgba(255, 215, 0, 0.5); }
+                100% { box-shadow: 0 0 20px gold; }
+              }
+            `;
+            document.head.appendChild(style);
+          }
         }
       });
       
-      // 2초 후 결과 메시지 표시
       setTimeout(() => {
         resultDiv.innerHTML += '<br><span style="font-size: 0.8em;">다시 시작하려면 게임 시작 버튼을 누르세요.</span>';
       }, 2000);
+    }
+    
+    // 게임 시작
+    function startGame() {
+      console.log("게임 시작");
+      
+      clearCars();
+      
+      gameStarted = true;
+      gameFinished = false;
+      finishedCars = [];
+      
+      resultDiv.textContent = '';
+      raceInfoDiv.textContent = '레이스 시작!';
+      
+      const playerCount = parseInt(playerCountInput.value) || 4;
+      createCars(Math.min(Math.max(playerCount, 2), 8));
+      
+      lastTimestamp = 0;
+      gameTime = 0;
     }
   </script>
 </body>
