@@ -10,7 +10,7 @@
 
 이 프로젝트의 라이브 데모는 아래 URL에서 확인하실 수 있습니다:
 
-[** 레이싱 게임 - 라이브 데모 바로가기**](https://revfactory.github.io/racing/)
+[**레이싱 게임 - 라이브 데모 바로가기**](https://revfactory.github.io/racing/)
 
 ## 주요 기능 (Features)
 
